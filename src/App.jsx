@@ -555,16 +555,34 @@ const seedData = () => ({
   billStatus: {},
   familyMembers: [
     {
-      id: uid(), fullNameTh: "", fullNameEn: "", nickname: "นิว", relationship: "Primary Member", familyRole: "admin", gender: "",
-      generation: "G1", maritalStatus: "สมรสจดทะเบียน", idNumber: "",
-      birthYear: "", birthDate: "", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
-      notes: "", isAssetHolder: true,
+      id: uid(), fullNameTh: "ศิริพงษ์ ปราณีสุทธิกุล", fullNameEn: "Siripong Praneesuttigul", nickname: "นิว", relationship: "Primary Member", familyRole: "admin", gender: "ชาย",
+      generation: "G1", maritalStatus: "สมรสจดทะเบียน", idNumber: "1610100064542",
+      birthYear: "", birthDate: "07/05/1988", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
+      notes: "Passport AC3067563 (หมดอายุ 01 พ.ค. 2027) · เกิดที่อุทัยธานี", isAssetHolder: true,
     },
     {
-      id: uid(), fullNameTh: "", fullNameEn: "", nickname: "ฝ้าย", relationship: "คู่สมรส", familyRole: "financial", gender: "",
-      generation: "G1", maritalStatus: "สมรสจดทะเบียน", idNumber: "",
-      birthYear: "", birthDate: "", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
-      notes: "", isAssetHolder: true,
+      id: uid(), fullNameTh: "นิภาพร นิรัติศัย", fullNameEn: "Niphaporn Niruttisai", nickname: "ฝ้าย", relationship: "คู่สมรส", familyRole: "financial", gender: "หญิง",
+      generation: "G1", maritalStatus: "สมรสจดทะเบียน", idNumber: "1629900124815",
+      birthYear: "", birthDate: "23/01/1988", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
+      notes: "Passport AC3067565 (หมดอายุ 01 พ.ค. 2027) · เกิดที่กำแพงเพชร · นามสกุลในพาสปอร์ต (Niruttisai) ต่างจากนามสกุลสามี — ตรวจสอบว่าจดทะเบียนเปลี่ยนนามสกุลแล้วหรือยัง", isAssetHolder: true,
+    },
+    {
+      id: uid(), fullNameTh: "ธมลวรรณ ปราณีสุทธิกุล", fullNameEn: "Thamonwan Praneesuttigul", nickname: "มิ้นท์", relationship: "ลูก", familyRole: "dependent", gender: "หญิง",
+      generation: "G2", maritalStatus: "", idNumber: "1619900732599",
+      birthYear: "", birthDate: "09/12/2019", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
+      notes: "Passport AC3067558 (หมดอายุ 01 พ.ค. 2027) · เกิดที่อุทัยธานี", isAssetHolder: false,
+    },
+    {
+      id: uid(), fullNameTh: "พิชามญชุ์ ปราณีสุทธิกุล", fullNameEn: "Pichamon Praneesuttigul", nickname: "โรส", relationship: "ลูก", familyRole: "dependent", gender: "หญิง",
+      generation: "G2", maritalStatus: "", idNumber: "1610101174007",
+      birthYear: "", birthDate: "17/12/2021", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
+      notes: "Passport AC3067551 (หมดอายุ 01 พ.ค. 2027) · เกิดที่อุทัยธานี", isAssetHolder: false,
+    },
+    {
+      id: uid(), fullNameTh: "ปิติพัฒน์ ปราณีสุทธิกุล", fullNameEn: "Pitiphat Praneesuttigul", nickname: "แพทริค", relationship: "ลูก", familyRole: "dependent", gender: "ชาย",
+      generation: "G2", maritalStatus: "", idNumber: "1609901645801",
+      birthYear: "", birthDate: "24/01/2025", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
+      notes: "Passport AC7690883 (หมดอายุ 17 มิ.ย. 2030) · เกิดที่นครสวรรค์", isAssetHolder: false,
     },
   ],
   estateWill: {
