@@ -1,5 +1,25 @@
 # Wealth Vitality Dashboard
 
+## เปิด Cloud Sync (ให้บ้าน / คลินิก / มือถือ ใช้ข้อมูลชุดเดียวกัน)
+
+ทำครั้งเดียว:
+
+1. **สร้าง Supabase project ใหม่** ที่ supabase.com (แยกจาก project ของบริษัท) เลือก region Singapore
+2. **สร้างตาราง:** SQL Editor → New query → วางเนื้อหาไฟล์ `supabase/schema.sql` → Run
+3. **คัดลอก key:** Project Settings → API → คัดลอก `Project URL` และ `anon public` key
+   (ห้ามใช้ `service_role` key ในหน้าเว็บเด็ดขาด)
+4. **ใส่ใน Netlify:** Site configuration → Environment variables → เพิ่ม 2 ตัว
+   - `VITE_SUPABASE_URL` = Project URL
+   - `VITE_SUPABASE_ANON_KEY` = anon public key
+5. **Deploy ใหม่:** Deploys → Trigger deploy → **Clear cache and deploy site**
+   (ค่า `VITE_` ถูกฝังตอน build ต้อง build ใหม่ทุกครั้งที่แก้ค่า)
+6. **สร้างบัญชี:** เปิดเว็บ → สร้างบัญชี → ยืนยันอีเมล → เข้าสู่ระบบ → เลือก "นำเข้าจากไฟล์สำรอง (.json)"
+7. **ปิดการสมัครบัญชีใหม่:** Supabase → Authentication → Sign In / Providers → ปิด "Allow new users to sign up"
+8. เครื่องอื่น: เปิดเว็บ → เข้าสู่ระบบด้วยบัญชีเดียวกัน → เลือก "ใช้ข้อมูลบน cloud"
+
+รันในเครื่อง: สร้างไฟล์ `.env.local` ใส่สองค่าข้างบน (ไฟล์นี้ไม่ถูกอัปขึ้น GitHub)
+ถ้าไม่ใส่ค่า แอปจะทำงานแบบเดิม (เก็บเฉพาะเครื่องนี้) และมีป้ายบอกที่มุมซ้ายล่าง
+
 ## รันทดสอบในเครื่องตัวเอง (ก่อน deploy)
 
 ต้องมี [Node.js](https://nodejs.org) ติดตั้งไว้ก่อน (เวอร์ชัน 18 ขึ้นไป)
