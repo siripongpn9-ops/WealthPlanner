@@ -277,6 +277,23 @@ function findRenewableSeries(transactions, year) {
   return result;
 }
 
+// Policy owners are free text ("นิว (New)", "Kids"…). Typing just "นิว" or "New" should land in the
+// existing "นิว (New)" group instead of starting a new one.
+function ownerNameParts(o) {
+  const str = String(o || "").trim();
+  const m = /^(.*?)\s*\((.*)\)\s*$/.exec(str);
+  return (m ? [m[1], m[2]] : [str]).map((x) => x.trim().toLowerCase()).filter(Boolean);
+}
+function matchExistingOwner(typed, existingOwners) {
+  const t = String(typed || "").trim();
+  if (!t) return t;
+  const tParts = ownerNameParts(t);
+  const hit = existingOwners
+    .filter((o) => ownerNameParts(o).some((part) => tParts.includes(part)))
+    .sort((a, b) => b.length - a.length)[0]; // prefer the fuller name, e.g. "นิว (New)" over "นิว"
+  return hit || t;
+}
+
 function debtDueInMonth(l, year, monthIdx0) {
   const target = year * 12 + monthIdx0;
   const start = dateToMonthIndex(l.startDate);
@@ -1266,14 +1283,16 @@ function WealthVitalityDashboard({ cloud = null }) {
     () => data.insurancePolicies.filter((p) => p.status === "Active").length,
     [data.insurancePolicies]
   );
+  const policyOwners = useMemo(() => [...new Set(data.insurancePolicies.map((p) => p.owner).filter(Boolean))], [data.insurancePolicies]);
   const policiesByOwner = useMemo(() => {
     const g = {};
     data.insurancePolicies.forEach((p) => {
-      if (!g[p.owner]) g[p.owner] = [];
-      g[p.owner].push(p);
+      const key = matchExistingOwner(p.owner, policyOwners) || "-";
+      if (!g[key]) g[key] = [];
+      g[key].push(p);
     });
     return g;
-  }, [data.insurancePolicies]);
+  }, [data.insurancePolicies, policyOwners]);
   const premiumCalendar = useMemo(() => {
     const byMonth = {};
     MONTH_ORDER.forEach((m) => (byMonth[m] = { month: m, total: 0, policies: [] }));
@@ -2336,6 +2355,7 @@ function WealthVitalityDashboard({ cloud = null }) {
           modal={modal}
           familyMembers={data.familyMembers}
           offshoreStocks={data.offshoreStocks}
+          policyOwners={policyOwners}
           onClose={() => setModal(null)}
           onSave={(key, itemOrItems) => {
             if (Array.isArray(itemOrItems)) {
@@ -4699,15 +4719,24 @@ function InsuranceTab({ policies, coverageTargets, notes, totalPremium, activePo
         {Object.keys(policiesByOwner).length ? (
           Object.entries(policiesByOwner).map(([owner, list]) => (
             <div key={owner} className="mb-6 last:mb-0">
-              <div style={{ fontSize: "12px", color: "#C9A227", fontWeight: 600, marginBottom: 8, letterSpacing: "0.03em" }}>
-                ●{" "}
-                <EditableText
-                  value={owner}
-                  style={{ fontSize: "12px", fontWeight: 600, color: "#C9A227" }}
-                  onSave={(newOwner) => {
-                    list.forEach((p) => updateItem("insurancePolicies", p.id, { owner: newOwner }));
-                  }}
-                />
+              <div className="flex items-center justify-between gap-2" style={{ fontSize: "12px", color: "#C9A227", fontWeight: 600, marginBottom: 8, letterSpacing: "0.03em" }}>
+                <div>
+                  ●{" "}
+                  <EditableText
+                    value={owner}
+                    style={{ fontSize: "12px", fontWeight: 600, color: "#C9A227" }}
+                    onSave={(newOwner) => {
+                      list.forEach((p) => updateItem("insurancePolicies", p.id, { owner: newOwner }));
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={() => setModal({ type: "policy", preset: { owner } })}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md"
+                  style={{ background: "#C9A22718", border: "1px solid #C9A22755", color: "#C9A227", fontSize: "11px", fontWeight: 500 }}
+                >
+                  <Plus size={11} /> เพิ่มกรมธรรม์ของ {owner}
+                </button>
               </div>
               <div className="overflow-x-auto">
                 <table>
@@ -5970,7 +5999,7 @@ function EstateDetailFieldsBlock({ form, set, familyMembers }) {
   );
 }
 
-function EntryModal({ modal, onClose, onSave, familyMembers, onAddLot, onSellFIFO, offshoreStocks, onAddManualSale }) {
+function EntryModal({ modal, onClose, onSave, familyMembers, onAddLot, onSellFIFO, offshoreStocks, onAddManualSale, policyOwners = [] }) {
   const { type } = modal;
 
   const [form, setForm] = useState(() => {
@@ -5994,7 +6023,7 @@ function EntryModal({ modal, onClose, onSave, familyMembers, onAddLot, onSellFIF
       };
     if (type === "policy")
       return {
-        owner: "", company: "", policyName: "", type_: "ประกันชีวิต", policyNumber: "",
+        owner: modal.preset?.owner || "", company: "", policyName: "", type_: "ประกันชีวิต", policyNumber: "",
         startDate: "", maturityDate: "", sumAssured: "", cashSurrenderValue: "", paymentMonth: "Jan", premium: "", beneficiary: "", status: "Active",
       };
     if (type === "bill") return { name: "", category: "อื่นๆ", amount: "", month: "Monthly", dueDay: "" };
@@ -6123,7 +6152,7 @@ function EntryModal({ modal, onClose, onSave, familyMembers, onAddLot, onSellFIF
     } else if (type === "policy") {
       if (!form.owner || !form.policyName) return;
       onSave(keys[type], {
-        owner: form.owner,
+        owner: matchExistingOwner(form.owner, policyOwners),
         company: form.company,
         policyName: form.policyName,
         type: form.type_,
@@ -6482,7 +6511,12 @@ function EntryModal({ modal, onClose, onSave, familyMembers, onAddLot, onSellFIF
             {type === "policy" && (
               <>
                 <div className="grid grid-cols-2 gap-3">
-                  <InputField label="เจ้าของกรมธรรม์" value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="เช่น นิว (New)" />
+                  <InputField label="เจ้าของกรมธรรม์" list="policy-owner-list" value={form.owner} onChange={(e) => set("owner", e.target.value)} placeholder="เลือกจากรายชื่อ หรือพิมพ์ชื่อใหม่" />
+                  <datalist id="policy-owner-list">
+                    {policyOwners.map((o) => (
+                      <option key={o} value={o} />
+                    ))}
+                  </datalist>
                   <InputField label="บริษัทประกัน" value={form.company} onChange={(e) => set("company", e.target.value)} placeholder="เช่น AIA, TLI" />
                 </div>
                 <InputField label="ชื่อกรมธรรม์" value={form.policyName} onChange={(e) => set("policyName", e.target.value)} placeholder="เช่น AIA easy 10/10" />
