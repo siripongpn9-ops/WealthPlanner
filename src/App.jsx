@@ -237,6 +237,46 @@ function dateToMonthIndex(str) {
 // Is this loan's installment due in the given month? (monthIdx0: 0 = Jan)
 // Uses the start date, then maturity date / end year / term — whichever is filled in.
 // Missing dates don't hide the payment, so older entries keep showing every month as before.
+// "YYYY-MM-DD" + n months, done on the string so time zones can't shift the day.
+function addMonthsToDateStr(dateStr, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateStr || ""));
+  if (!m) return null;
+  const total = parseInt(m[1], 10) * 12 + (parseInt(m[2], 10) - 1) + n;
+  const y = Math.floor(total / 12);
+  const mo = (total % 12) + 1;
+  const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const day = Math.min(parseInt(m[3], 10), lastDay);
+  return `${y}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+// Recurring transactions are stored as one row per occurrence, so a series created for 2026 simply
+// stops in December. This finds series that ran up to the year before `year`, have nothing in `year`
+// yet, and builds that year's occurrences (same recurringId, so next year it is found again).
+function findRenewableSeries(transactions, year) {
+  const intervalOf = { monthly: 1, quarterly: 3, yearly: 12 };
+  const groups = {};
+  (transactions || []).forEach((t) => {
+    if (!t.recurringId || !intervalOf[t.frequency] || !t.date) return;
+    (groups[t.recurringId] = groups[t.recurringId] || []).push(t);
+  });
+  const result = [];
+  Object.entries(groups).forEach(([recurringId, items]) => {
+    if (items.some((t) => Number(String(t.date).slice(0, 4)) >= year)) return;
+    const last = items.reduce((a, b) => (String(a.date) >= String(b.date) ? a : b));
+    const step = intervalOf[last.frequency];
+    let next = addMonthsToDateStr(last.date, step);
+    if (!next || Number(next.slice(0, 4)) !== year) return; // series ended earlier — treat as finished, don't revive it
+    const { id, ...template } = last;
+    const newItems = [];
+    while (next && Number(next.slice(0, 4)) === year) {
+      newItems.push({ ...template, date: next, recurringId });
+      next = addMonthsToDateStr(next, step);
+    }
+    result.push({ recurringId, name: last.category || "รายการ", type: last.type, amount: Number(last.amount || 0), frequency: last.frequency, items: newItems });
+  });
+  return result;
+}
+
 function debtDueInMonth(l, year, monthIdx0) {
   const target = year * 12 + monthIdx0;
   const start = dateToMonthIndex(l.startDate);
@@ -1725,6 +1765,26 @@ function WealthVitalityDashboard({ cloud = null }) {
     setData((d) => ({ ...d, [key]: [...d[key], ...items.map((item) => ({ id: uid(), ...item }))] }));
     showToast(`เพิ่ม ${items.length} รายการสำเร็จ (สร้างล่วงหน้าให้แล้ว)`);
   }
+  // Which year to offer renewals for: the year being viewed in กระแสเงินสด; in Nov–Dec of the current
+  // year also look one year ahead so next year's recurring items can be set up before January.
+  const cfViewYear = Number(cashflowMonth.slice(0, 4));
+  const renewTargetYear = useMemo(() => {
+    if (findRenewableSeries(data.transactions, cfViewYear).length) return cfViewYear;
+    const now = new Date();
+    if (cfViewYear === now.getFullYear() && now.getMonth() >= 10) return cfViewYear + 1;
+    return cfViewYear;
+  }, [data.transactions, cfViewYear]);
+  const renewableSeries = useMemo(() => findRenewableSeries(data.transactions, renewTargetYear), [data.transactions, renewTargetYear]);
+
+  function renewRecurring(year) {
+    const series = findRenewableSeries(data.transactions, year);
+    const items = series.flatMap((x) => x.items);
+    if (!items.length) return;
+    if (!window.confirm(`สร้างรายการประจำของปี ${year + 543} จำนวน ${series.length} รายการ (${items.length} งวด) ตามยอดเดิม?\nแก้หรือลบทีละงวดได้ภายหลัง`)) return;
+    setData((d) => ({ ...d, transactions: [...d.transactions, ...items.map((t) => ({ ...t, id: uid() }))] }));
+    showToast(`ต่อรายการประจำไปปี ${year + 543} แล้ว (${items.length} งวด)`);
+  }
+
   function addOffshoreLot(stockId, lot) {
     setData((d) => ({
       ...d,
@@ -2155,6 +2215,9 @@ function WealthVitalityDashboard({ cloud = null }) {
             cfYearlyFlow={cfYearlyFlow}
             updateItem={updateItem}
             categoryExpenseType={data.cashflowSettings.categoryExpenseType || {}}
+            renewableSeries={renewableSeries}
+            renewTargetYear={renewTargetYear}
+            onRenewRecurring={renewRecurring}
           />
         )}
 
@@ -3838,7 +3901,7 @@ function CashflowTab({
   cfCashIn, cfCashOut, cfNet, cfOpeningCash, cfClosingCash, cfForecastClosing, cfUnpaidBillsRemaining,
   cfYearMatchesThisYear, cfBreakdownIn, cfBreakdownOut, cfPlanVsActual, cfTimeline, currentMonthKey,
   minCashBuffer, setCashflowOpeningOverride, updateSettings, setModal, removeItem, toggleBillPaid, cfMonthAbbrev,
-  cfYearlyFlow, updateItem, categoryExpenseType,
+  cfYearlyFlow, updateItem, categoryExpenseType, renewableSeries = [], renewTargetYear, onRenewRecurring,
 }) {
   const isCurrentMonth = cashflowMonth === currentMonthKey;
   const belowBuffer = cfForecastClosing < Number(minCashBuffer || 0);
@@ -3876,6 +3939,28 @@ function CashflowTab({
           </select>
         </div>
       </Card>
+
+      {renewableSeries.length > 0 && (
+        <Card className="p-5" >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div style={{ fontFamily: "Fraunces", fontSize: "1.05rem", color: "#C9A227" }}>
+                รายการประจำ {renewableSeries.length} รายการ ยังไม่ได้ต่อไปปี {renewTargetYear + 543}
+              </div>
+              <div style={{ fontSize: "11.5px", color: "#8A93A0", marginTop: 4, lineHeight: 1.6 }}>
+                {renewableSeries.map((x) => `${x.name} ${fmtTHB(x.amount)}`).join(" · ")}
+              </div>
+            </div>
+            <button
+              onClick={() => onRenewRecurring(renewTargetYear)}
+              className="px-4 py-2 rounded-lg text-sm shrink-0"
+              style={{ background: "#C9A227", color: "#101820", fontWeight: 600 }}
+            >
+              ต่อไปปี {renewTargetYear + 543}
+            </button>
+          </div>
+        </Card>
+      )}
 
       {/* Yearly cash flow overview */}
       <Card className="p-6">
