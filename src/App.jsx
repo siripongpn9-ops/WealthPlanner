@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 /* ---------------------------------------------------------
-   WEALTH VITALITY — local-first personal finance dashboard
+   WEALTH VITALITY — personal finance dashboard (cloud sync via Supabase, see CloudSync.jsx)
    Design tokens:
    bg      #101820  (deep ink navy)
    surface #17212B  (panel)
@@ -221,6 +221,36 @@ function estimateStandalonepayoff(liability) {
 }
 
 const MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "YYYY-MM-DD" (or "YYYY-MM") → month index counted from year 0 (year*12 + month0).
+// Years above 2400 are treated as Buddhist Era (พ.ศ.) and converted to AD.
+function dateToMonthIndex(str) {
+  const m = /^(\d{4})-(\d{1,2})/.exec(String(str || "").trim());
+  if (!m) return null;
+  let y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  if (y > 2400) y -= 543;
+  if (!y || mo < 1 || mo > 12) return null;
+  return y * 12 + (mo - 1);
+}
+
+// Is this loan's installment due in the given month? (monthIdx0: 0 = Jan)
+// Uses the start date, then maturity date / end year / term — whichever is filled in.
+// Missing dates don't hide the payment, so older entries keep showing every month as before.
+function debtDueInMonth(l, year, monthIdx0) {
+  const target = year * 12 + monthIdx0;
+  const start = dateToMonthIndex(l.startDate);
+  if (start !== null && target < start) return false;
+  let end = dateToMonthIndex(l.maturityDate);
+  if (end === null && l.endYear) {
+    let ey = parseInt(l.endYear, 10);
+    if (ey > 2400) ey -= 543;
+    if (ey) end = ey * 12 + 11;
+  }
+  if (end === null && start !== null && Number(l.termMonths) > 0) end = start + Number(l.termMonths) - 1;
+  if (end !== null && target > end) return false;
+  return true;
+}
 const MONTH_TH = { Jan: "ม.ค.", Feb: "ก.พ.", Mar: "มี.ค.", Apr: "เม.ย.", May: "พ.ค.", Jun: "มิ.ย.", Jul: "ก.ค.", Aug: "ส.ค.", Sep: "ก.ย.", Oct: "ต.ค.", Nov: "พ.ย.", Dec: "ธ.ค." };
 const PIE_COLORS_CF = ["#C9A227", "#8A6FBF", "#5B84B1", "#4FA37B", "#C1554A", "#3FA7A0", "#B0885A", "#7E9CD8", "#D98E73", "#6FBF9E"];
 
@@ -414,175 +444,49 @@ const monthLabel = (dateStr) => {
 };
 
 /* ---------------- default seed data ---------------- */
+// Empty starting template only. Real data lives in Supabase (cloud sync) or in this browser —
+// never put personal data here: this file is compiled into the public website bundle.
 const seedData = () => ({
   assets: [],
-  liabilities: [
-    {
-      id: uid(), name: "สินเชื่อบ้าน", lender: "ธนาคารกสิกรไทย", category: "บ้าน",
-      originalAmount: 3000000, currentBalance: 2100000, interestRate: "3.2",
-      monthlyPayment: 22000, startDate: "2021-04-01", termMonths: 240, endYear: "2041",
-      mrtaInsurance: "", notes: "", nextPaymentDate: "", status: "Active", interestType: "reducing", borrower: "", hasCollateral: "", collateralAsset: "",
-    },
-  ],
-  debtSettings: { strategy: "snowball", extraPayment: 0 },
-  cashAccounts: [
-    { id: uid(), name: "TTB", subCategory: "Cash", amount: 250000, currency: "THB", fxToThb: 1, yieldPct: 0 },
-    { id: uid(), name: "KBANK", subCategory: "Cash", amount: 76737, currency: "THB", fxToThb: 1, yieldPct: 0 },
-    { id: uid(), name: "KTB Global", subCategory: "Savings", amount: 2529.58, currency: "USD", fxToThb: 33.15, yieldPct: 2.25 },
-    { id: uid(), name: "KTB Global", subCategory: "Savings (JPY)", amount: 1068822, currency: "JPY", fxToThb: 0.228, yieldPct: 0 },
-  ],
-  domesticFunds: [
-    { id: uid(), name: "KFUSIndex", symbol: "KFUSINDFXRMF", subCategory: "Retirement Funds", units: 4198.66, avgPrice: 9.65, currentPrice: 12.89, dividendYr: 0, dcaMonth: 0, targetPct: 3 },
-    { id: uid(), name: "Gold -RMF-A", symbol: "GOLD-RMF-A", subCategory: "Retirement Funds", units: 1342.03, avgPrice: 24.22, currentPrice: 24.21, dividendYr: 0, dcaMonth: 0, targetPct: 3 },
-    { id: uid(), name: "EastspringUS500", symbol: "ES-US500RMF", subCategory: "Retirement Funds", units: 1074.88, avgPrice: 26.05, currentPrice: 41.33, dividendYr: 0, dcaMonth: 0, targetPct: 3 },
-    { id: uid(), name: "One Global equity", symbol: "ONE-UGERMF-A", subCategory: "Retirement Funds", units: 2707.47, avgPrice: 19.94, currentPrice: 18.25, dividendYr: 0, dcaMonth: 0, targetPct: 1 },
-    { id: uid(), name: "ES-China Op", symbol: "ES-CORMF", subCategory: "Retirement Funds", units: 2979.46, avgPrice: 17.79, currentPrice: 11.76, dividendYr: 0, dcaMonth: 0, targetPct: 1 },
-    { id: uid(), name: "ES-GOLDSRMF", symbol: "ES-GOLDSRMF", subCategory: "Retirement Funds", units: 9145.87, avgPrice: 20.48, currentPrice: 20.83, dividendYr: 0, dcaMonth: 5000, targetPct: 7 },
-    { id: uid(), name: "ES-US500RMF", symbol: "ES-US500RMF", subCategory: "Retirement Funds", units: 19567.84, avgPrice: 34.02, currentPrice: 40.41, dividendYr: 0, dcaMonth: 20000, targetPct: 50 },
-    { id: uid(), name: "ES-US500", symbol: "ES-US500RMF", subCategory: "Mutual Funds", units: 5364.45, avgPrice: 42.23, currentPrice: 44.41, dividendYr: 0, dcaMonth: 23400, targetPct: 15 },
-    { id: uid(), name: "ES-GQG", symbol: "ES-GQG", subCategory: "Mutual Funds", units: 4314.96, avgPrice: 24.02, currentPrice: 25.22, dividendYr: 0, dcaMonth: 7200, targetPct: 7 },
-    { id: uid(), name: "ES-GINFRA-A", symbol: "ES-GINFRA-A", subCategory: "Mutual Funds", units: 4008.62, avgPrice: 17.85, currentPrice: 18.52, dividendYr: 0, dcaMonth: 5400, targetPct: 5 },
-  ],
-  offshoreStocks: [
-    { id: uid(), name: "Vanguard S&P 500", symbol: "VOO", subCategory: "Stocks", units: 95.49, avgPrice: 599.3, currentPrice: 704.2, dividendYr: 644.58, dcaMonth: 0, targetPct: 30, lots: [], sales: [] },
-    { id: uid(), name: "Microsoft", symbol: "MSFT", subCategory: "Stocks", units: 100, avgPrice: 396.68, currentPrice: 496.37, dividendYr: 728, dcaMonth: 0, targetPct: 15, lots: [], sales: [] },
-    { id: uid(), name: "Ast Spacemobile", symbol: "ASTS", subCategory: "Stocks", units: 300, avgPrice: 81.67, currentPrice: 59.88, dividendYr: 707.2, dcaMonth: 0, targetPct: 5, lots: [], sales: [] },
-    { id: uid(), name: "Broadcom", symbol: "AVGO", subCategory: "Stocks", units: 155.06, avgPrice: 321.53, currentPrice: 355.59, dividendYr: 221.15, dcaMonth: 0, targetPct: 10, lots: [], sales: [] },
-    { id: uid(), name: "Alphabet Inc Class A", symbol: "GOOG", subCategory: "Stocks", units: 165.15, avgPrice: 304.51, currentPrice: 342, dividendYr: 44.13, dcaMonth: 0, targetPct: 10, lots: [], sales: [] },
-    { id: uid(), name: "Rocket Lab USA", symbol: "RKLB", subCategory: "Stocks", units: 230, avgPrice: 54.18, currentPrice: 66.18, dividendYr: 0, dcaMonth: 0, targetPct: 6, lots: [], sales: [] },
-    { id: uid(), name: "Intuitive Machines", symbol: "LUNR", subCategory: "Stocks", units: 400, avgPrice: 19.92, currentPrice: 16.11, dividendYr: 0, dcaMonth: 0, targetPct: 2.28, lots: [], sales: [] },
-    { id: uid(), name: "EOS Energy", symbol: "EOSE", subCategory: "Stocks", units: 1550, avgPrice: 5.08, currentPrice: 3.34, dividendYr: 0, dcaMonth: 0, targetPct: 1, lots: [], sales: [] },
-    { id: uid(), name: "Redwire", symbol: "RDW", subCategory: "Stocks", units: 60, avgPrice: 9.73, currentPrice: 11.27, dividendYr: 0, dcaMonth: 0, targetPct: 0.5, lots: [], sales: [] },
-    { id: uid(), name: "Archer Aviation", symbol: "ACHR", subCategory: "Stocks", units: 1500, avgPrice: 8.7, currentPrice: 5.9, dividendYr: 0, dcaMonth: 0, targetPct: 2, lots: [], sales: [] },
-  ],
-  realEstate: [
-    { id: uid(), name: "Home", subCategory: "Residential", purchasePrice: 3800000, currentValue: 3800000, rentalIncomeYr: 0 },
-    { id: uid(), name: "Land", subCategory: "Land", purchasePrice: 4411500, currentValue: 4600000, rentalIncomeYr: 0 },
-  ],
-  preciousMetals: [
-    { id: uid(), name: "Gold", subCategory: "Gold", qty: 3, avgCost: 38000, marketPrice: 70000 },
-  ],
-  businessEquity: [
-    { id: uid(), name: "คลินิกแพทย์ศิริพงษ์", subCategory: "คลินิก", ownershipPct: 100, avgCost: 3500000, currentValue: 3500000, dividendYr: 0 },
-    { id: uid(), name: "Wellvera", subCategory: "Startup Shares", ownershipPct: 80, avgCost: 850000, currentValue: 850000, dividendYr: 0 },
-    { id: uid(), name: "NFW Global trading", subCategory: "Private Equity", ownershipPct: 15, avgCost: 500000, currentValue: 500000, dividendYr: 0 },
-  ],
-  portfolioSettings: { netWorthGoal: 65000000, usdThbRate: 33.15, stockApiKey: "" },
-  transactions: (() => {
-    const now = new Date();
-    const y = now.getFullYear(), m = now.getMonth();
-    const d = (day) => new Date(y, m, Math.min(day, 27)).toISOString().slice(0, 10);
-    return [
-      { id: uid(), date: d(30), type: "รายรับ", flowCategory: "เงินเดือน", category: "เงินเดือนประจำ", amount: 150000, note: "" },
-      { id: uid(), date: d(20), type: "รายรับ", flowCategory: "รายได้ธุรกิจ", category: "รายได้คลินิก", amount: 100000, note: "" },
-      { id: uid(), date: d(15), type: "รายรับ", flowCategory: "เงินปันผล", category: "ปันผลหุ้น", amount: 80000, note: "" },
-      { id: uid(), date: d(3), type: "รายรับ", flowCategory: "ค่าเช่า", category: "ค่าเช่าอาคาร", amount: 50000, note: "" },
-      { id: uid(), date: d(8), type: "รายรับ", flowCategory: "ดอกเบี้ย", category: "ดอกเบี้ยเงินฝาก", amount: 20000, note: "" },
-      { id: uid(), date: d(12), type: "รายรับ", flowCategory: "อื่นๆ", category: "รายได้อื่นๆ", amount: 50000, note: "" },
-      { id: uid(), date: d(2), type: "รายจ่าย", flowCategory: "ค่าใช้จ่ายประจำวัน", category: "ค่าใช้จ่ายบ้าน", amount: 120000, note: "" },
-      { id: uid(), date: d(5), type: "รายจ่าย", flowCategory: "ชำระหนี้", category: "ผ่อนบ้าน", amount: 50000, note: "" },
-      { id: uid(), date: d(18), type: "เงินออม", flowCategory: "ลงทุน", category: "DCA กองทุน", amount: 80000, note: "" },
-      { id: uid(), date: d(10), type: "รายจ่าย", flowCategory: "ประกัน", category: "เบี้ยประกัน", amount: 20000, note: "" },
-      { id: uid(), date: d(25), type: "รายจ่าย", flowCategory: "ภาษี", category: "ภาษีเงินได้", amount: 30000, note: "" },
-      { id: uid(), date: d(22), type: "รายจ่าย", flowCategory: "อื่นๆ", category: "ค่าใช้จ่ายเบ็ดเตล็ด", amount: 20000, note: "" },
-    ];
-  })(),
-  cashflowPlan: { เงินเข้า: 500000, ค่าใช้จ่าย: 200000, ชำระหนี้: 50000, ลงทุน: 100000 },
-  cashflowSettings: { openingCashOverrides: {}, minCashBuffer: 500000, categoryExpenseType: {} },
-  netWorthHistory: Array.from({ length: 6 }).map((_, i) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - (5 - i));
-    return { date: d.toISOString().slice(0, 10), value: 2600000 + i * 130000 + (i % 2 === 0 ? 40000 : -20000) };
-  }),
-  // Yearly snapshots (พ.ศ.) for long-term growth comparison — from the user's own historical tracking sheet
-  netWorthSnapshots: [
-    { id: uid(), year: 2567, totalAssets: 7794538, totalLiabilities: 9015161 },
-    { id: uid(), year: 2568, totalAssets: 10375401, totalLiabilities: 8214141 },
-    { id: uid(), year: 2569, totalAssets: 15724773, totalLiabilities: 6638763 },
-  ],
+  liabilities: [],
+  debtSettings: { strategy: "avalanche", extraPayment: 0 },
+  cashAccounts: [],
+  domesticFunds: [],
+  offshoreStocks: [],
+  realEstate: [],
+  preciousMetals: [],
+  businessEquity: [],
+  portfolioSettings: { netWorthGoal: 10000000, usdThbRate: 33, stockApiKey: "" },
+  transactions: [],
+  cashflowPlan: { เงินเข้า: 0, ค่าใช้จ่าย: 0, ชำระหนี้: 0, ลงทุน: 0 },
+  cashflowSettings: { openingCashOverrides: {}, minCashBuffer: 0, categoryExpenseType: {} },
+  netWorthHistory: [],
+  netWorthSnapshots: [],
   // FX remittance log for offshore investment tax tracking (เงินโอนเข้า-ออกต่างประเทศ)
-  fxRemittances: [
-    { id: uid(), date: "2026-08-31", direction: "out", amount: 2792996.81, currency: "THB", purpose: "Dime", note: "" },
-    { id: uid(), date: "2026-08-31", direction: "in", amount: 201927.87, currency: "THB", purpose: "Dime", note: "" },
-    { id: uid(), date: "2026-08-31", direction: "out", amount: 1151636.32, currency: "THB", purpose: "Webull", note: "" },
-    { id: uid(), date: "2025-08-31", direction: "out", amount: 3405507.74, currency: "THB", purpose: "Dime", note: "" },
-    { id: uid(), date: "2025-08-31", direction: "out", amount: 124000, currency: "THB", purpose: "Webull", note: "" },
-    { id: uid(), date: "2024-08-31", direction: "out", amount: 609709.96, currency: "THB", purpose: "Dime", note: "" },
-  ],
-  // Cash sitting uninvested at each offshore broker (e.g. proceeds from a sale that hasn't been reinvested
-  // or remitted back to Thailand yet) — keyed by broker name, amount in USD
+  fxRemittances: [],
+  // Cash sitting uninvested at each offshore broker, keyed by broker name, amount in USD
   offshoreBrokerCash: {},
   // Override for "years of protection needed" in the insurance adequacy calc — null means auto-estimate from youngest child's age
   insuranceNeedsYearsOverride: null,
-  insurancePolicies: [
-    { id: uid(), owner: "นิว (New)", company: "TLI", policyName: "ทรัพย์บำนาญ 60 (1)", type: "ประกันบำนาญ", policyNumber: "นิว", startDate: "2020-08-31", maturityDate: "2078-08-31", sumAssured: 644330, cashSurrenderValue: 527062, paymentMonth: "Aug", premium: 100000, beneficiary: "ฝ้าย/มิ้นท์", status: "Active" },
-    { id: uid(), owner: "นิว (New)", company: "TLI", policyName: "ทรัพย์บำนาญ 60 (2)", type: "ประกันบำนาญ", policyNumber: "นิว", startDate: "2022-05-30", maturityDate: "2078-05-30", sumAssured: 1000000, cashSurrenderValue: 257000, paymentMonth: "May", premium: 100660, beneficiary: "ฝ้าย", status: "Active" },
-    { id: uid(), owner: "นิว (New)", company: "TLI", policyName: "Health Fit DD", type: "ประกันสุขภาพ IPD", policyNumber: "นิว", startDate: "", maturityDate: "", sumAssured: 0, cashSurrenderValue: 0, paymentMonth: "May", premium: 24040, beneficiary: "-", status: "Active" },
-    { id: uid(), owner: "นิว (New)", company: "TLI", policyName: "ธนทวี 15/8", type: "ประกันสะสมทรัพย์", policyNumber: "นิว", startDate: "2020-01-31", maturityDate: "2035-01-31", sumAssured: 500000, cashSurrenderValue: 589505, paymentMonth: "Jan", premium: 120000, beneficiary: "ฝ้าย/มิ้นท์", status: "Active" },
-    { id: uid(), owner: "นิว (New)", company: "TLI", policyName: "TL fit firm 18/5 (ปันผล)", type: "ประกันสะสมทรัพย์", policyNumber: "นิว", startDate: "2023-06-29", maturityDate: "2041-06-29", sumAssured: 400000, cashSurrenderValue: 212000, paymentMonth: "Jun", premium: 131760, beneficiary: "ฝ้าย", status: "Active" },
-    { id: uid(), owner: "นิว (New)", company: "TLI", policyName: "คุ้มครองโรคร้าย", type: "โรคร้ายแรง", policyNumber: "นิว", startDate: "", maturityDate: "", sumAssured: 0, cashSurrenderValue: 0, paymentMonth: "Jun", premium: 8540, beneficiary: "-", status: "Active" },
-    { id: uid(), owner: "นิว (New)", company: "AIA", policyName: "AIA easy 10/10", type: "Term Life", policyNumber: "นิว", startDate: "2024-09-21", maturityDate: "2034-09-21", sumAssured: 1500000, cashSurrenderValue: 0, paymentMonth: "Sep", premium: 8055, beneficiary: "ฝ้าย", status: "Active" },
-    { id: uid(), owner: "นิว (New)", company: "AIA", policyName: "lifetime/21", type: "Term Life", policyNumber: "นิว", startDate: "2000-07-18", maturityDate: "2087-07-01", sumAssured: 210000, cashSurrenderValue: 0, paymentMonth: "Jan", premium: 501, beneficiary: "ฝ้าย", status: "Active" },
-    { id: uid(), owner: "ฝ้าย (Fai)", company: "Allianz", policyName: "Max saving 18/8 ฝ้าย", type: "ประกันสะสมทรัพย์", policyNumber: "ฝ้าย", startDate: "2021-03-16", maturityDate: "2039-03-16", sumAssured: 295859, cashSurrenderValue: 386096, paymentMonth: "-", premium: 0, beneficiary: "นิว", status: "ปิดวงเงินสำเร็จ" },
-    { id: uid(), owner: "ฝ้าย (Fai)", company: "TLI", policyName: "ทรัพย์บำนาญ 60 ฝ้าย", type: "ประกันบำนาญ", policyNumber: "ฝ้าย", startDate: "", maturityDate: "2077-08-30", sumAssured: 1000000, cashSurrenderValue: 298000, paymentMonth: "Aug", premium: 113790, beneficiary: "นิว", status: "Active" },
-    { id: uid(), owner: "ฝ้าย (Fai)", company: "TLI", policyName: "Health Fit DD", type: "ประกันสุขภาพ IPD", policyNumber: "ฝ้าย", startDate: "", maturityDate: "", sumAssured: 0, cashSurrenderValue: 0, paymentMonth: "Aug", premium: 26920, beneficiary: "-", status: "Active" },
-    { id: uid(), owner: "Kids", company: "AIA", policyName: "UNL - มิ้นท์", type: "ประกันสุขภาพ IPD", policyNumber: "มิ้นท์", startDate: "2025-03-13", maturityDate: "2119-03-13", sumAssured: 5000000, cashSurrenderValue: 13270, paymentMonth: "Monthly", premium: 121931, beneficiary: "-", status: "Active" },
-    { id: uid(), owner: "Kids", company: "AIA", policyName: "UNL - โรส", type: "ประกันสุขภาพ IPD", policyNumber: "โรส", startDate: "2025-03-13", maturityDate: "2121-03-13", sumAssured: 5000000, cashSurrenderValue: 13270, paymentMonth: "Monthly", premium: 120260, beneficiary: "-", status: "Active" },
-    { id: uid(), owner: "Kids", company: "AIA", policyName: "UNL - แพทริค", type: "ประกันสุขภาพ IPD", policyNumber: "แพทริค", startDate: "2025-03-13", maturityDate: "2125-03-13", sumAssured: 5000000, cashSurrenderValue: 13270, paymentMonth: "Monthly", premium: 126538, beneficiary: "-", status: "Active" },
-    { id: uid(), owner: "Kids", company: "Allianz", policyName: "กรุงศรี saver 20/10 มิ้นท์", type: "ประกันสะสมทรัพย์", policyNumber: "มิ้นท์", startDate: "2022-07-25", maturityDate: "2042-07-25", sumAssured: 414670, cashSurrenderValue: 121251, paymentMonth: "Jul", premium: 50000, beneficiary: "-", status: "Active" },
-    { id: uid(), owner: "Kids", company: "Allianz", policyName: "กรุงศรี saver 20/10 โรส", type: "ประกันสะสมทรัพย์", policyNumber: "โรส", startDate: "2022-07-25", maturityDate: "2042-07-25", sumAssured: 414670, cashSurrenderValue: 121251, paymentMonth: "Jul", premium: 50000, beneficiary: "-", status: "Active" },
-  ],
+  insurancePolicies: [],
   coverageTargets: [
-    { id: uid(), label: "ความคุ้มครองชีวิต (เสียชีวิต)", current: 4254330, target: 15000000, unit: "บาท" },
-    { id: uid(), label: "เงินออมเมื่อครบกำหนด", current: 1467500, target: 2000000, unit: "บาท" },
-    { id: uid(), label: "รายได้หลังเกษียณต่อปี", current: 399650, target: 500000, unit: "บาท" },
-    { id: uid(), label: "วงเงิน IPD ต่อปี", current: 30000000, target: 30000000, unit: "บาท" },
-    { id: uid(), label: "ความคุ้มครองโรคร้ายแรง", current: 2000000, target: 3000000, unit: "บาท" },
-    { id: uid(), label: "วงเงินรักษาอุบัติเหตุ", current: 150000, target: 200000, unit: "บาท" },
-    { id: uid(), label: "เงินชดเชยรายวันนอนโรงพยาบาล", current: 500, target: 2000, unit: "บาท/วัน" },
+    { id: uid(), label: "ความคุ้มครองชีวิต (เสียชีวิต)", current: 0, target: 0, unit: "บาท" },
+    { id: uid(), label: "เงินออมเมื่อครบกำหนด", current: 0, target: 0, unit: "บาท" },
+    { id: uid(), label: "รายได้หลังเกษียณต่อปี", current: 0, target: 0, unit: "บาท" },
+    { id: uid(), label: "วงเงิน IPD ต่อปี", current: 0, target: 0, unit: "บาท" },
+    { id: uid(), label: "ความคุ้มครองโรคร้ายแรง", current: 0, target: 0, unit: "บาท" },
+    { id: uid(), label: "วงเงินรักษาอุบัติเหตุ", current: 0, target: 0, unit: "บาท" },
+    { id: uid(), label: "เงินชดเชยรายวันนอนโรงพยาบาล", current: 0, target: 0, unit: "บาท/วัน" },
   ],
-  insuranceNotes: [
-    { id: uid(), icon: "claim", title: "แจ้งเคลม", detail: "กรณีผู้เอาประกันเสียชีวิต ผู้รับผลประโยชน์ต้องแจ้งบริษัทภายใน 14 วันนับจากวันเสียชีวิต" },
-    { id: uid(), icon: "home", title: "Home Insurance", detail: "วงเงิน / 2 — คุ้มครอง นิว และ ฝ้าย" },
-    { id: uid(), icon: "clinic", title: "Clinic Insurance", detail: "คุ้มครอง Clinic แล้ว" },
-    { id: uid(), icon: "coop", title: "ประกันหนี้สหกรณ์", detail: "วงเงิน 1,000,000 บาท — คุ้มครองแล้ว" },
-    { id: uid(), icon: "estimate", title: "ประมาณการ", detail: "รายจ่ายต่อเดือนเมื่อปลอดภาระหนี้ ≈ 80,000 บาท/เดือน" },
-  ],
-  customBills: [
-    { id: uid(), name: "ค่าน้ำค่าไฟบ้าน", category: "สาธารณูปโภค", amount: 6000, month: "Monthly", dueDay: 5 },
-    { id: uid(), name: "ค่าเทอมลูก", category: "การศึกษา", amount: 45000, month: "May", dueDay: 15 },
-  ],
+  insuranceNotes: [],
+  customBills: [],
   billStatus: {},
   familyMembers: [
     {
-      id: uid(), fullNameTh: "ศิริพงษ์ ปราณีสุทธิกุล", fullNameEn: "Siripong Praneesuttigul", nickname: "นิว", relationship: "Primary Member", familyRole: "admin", gender: "ชาย",
-      generation: "G1", maritalStatus: "สมรสจดทะเบียน", idNumber: "1610100064542",
-      birthYear: "", birthDate: "07/05/1988", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
-      notes: "Passport AC3067563 (หมดอายุ 01 พ.ค. 2027) · เกิดที่อุทัยธานี", isAssetHolder: true,
-    },
-    {
-      id: uid(), fullNameTh: "นิภาพร นิรัติศัย", fullNameEn: "Niphaporn Niruttisai", nickname: "ฝ้าย", relationship: "คู่สมรส", familyRole: "financial", gender: "หญิง",
-      generation: "G1", maritalStatus: "สมรสจดทะเบียน", idNumber: "1629900124815",
-      birthYear: "", birthDate: "23/01/1988", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
-      notes: "Passport AC3067565 (หมดอายุ 01 พ.ค. 2027) · เกิดที่กำแพงเพชร · นามสกุลในพาสปอร์ต (Niruttisai) ต่างจากนามสกุลสามี — ตรวจสอบว่าจดทะเบียนเปลี่ยนนามสกุลแล้วหรือยัง", isAssetHolder: true,
-    },
-    {
-      id: uid(), fullNameTh: "ธมลวรรณ ปราณีสุทธิกุล", fullNameEn: "Thamonwan Praneesuttigul", nickname: "มิ้นท์", relationship: "ลูก", familyRole: "dependent", gender: "หญิง",
-      generation: "G2", maritalStatus: "", idNumber: "1619900732599",
-      birthYear: "", birthDate: "09/12/2019", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
-      notes: "Passport AC3067558 (หมดอายุ 01 พ.ค. 2027) · เกิดที่อุทัยธานี", isAssetHolder: false,
-    },
-    {
-      id: uid(), fullNameTh: "พิชามญชุ์ ปราณีสุทธิกุล", fullNameEn: "Pichamon Praneesuttigul", nickname: "โรส", relationship: "ลูก", familyRole: "dependent", gender: "หญิง",
-      generation: "G2", maritalStatus: "", idNumber: "1610101174007",
-      birthYear: "", birthDate: "17/12/2021", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
-      notes: "Passport AC3067551 (หมดอายุ 01 พ.ค. 2027) · เกิดที่อุทัยธานี", isAssetHolder: false,
-    },
-    {
-      id: uid(), fullNameTh: "ปิติพัฒน์ ปราณีสุทธิกุล", fullNameEn: "Pitiphat Praneesuttigul", nickname: "แพทริค", relationship: "ลูก", familyRole: "dependent", gender: "ชาย",
-      generation: "G2", maritalStatus: "", idNumber: "1609901645801",
-      birthYear: "", birthDate: "24/01/2025", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
-      notes: "Passport AC7690883 (หมดอายุ 17 มิ.ย. 2030) · เกิดที่นครสวรรค์", isAssetHolder: false,
+      id: uid(), fullNameTh: "", fullNameEn: "", nickname: "ผู้ใช้หลัก", relationship: "Primary Member", familyRole: "admin", gender: "",
+      generation: "G1", maritalStatus: "", idNumber: "",
+      birthYear: "", birthDate: "", birthDateCalendar: "ad", bloodType: "", medicalConditions: "", emergencyContactName: "", emergencyContactPhone: "",
+      notes: "", isAssetHolder: true,
     },
   ],
   estateWill: {
@@ -596,49 +500,63 @@ const seedData = () => ({
   estateChecklist: {},
 });
 
-function loadData() {
+// Fill in any fields missing from older saved data so new features don't crash.
+// Used for localStorage, backup files and cloud data alike.
+export function normalizeData(parsed) {
   const defaults = seedData();
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return defaults;
+  return {
+    assets: parsed.assets ?? defaults.assets,
+    liabilities: parsed.liabilities ?? defaults.liabilities,
+    cashAccounts: parsed.cashAccounts ?? defaults.cashAccounts,
+    domesticFunds: parsed.domesticFunds ?? defaults.domesticFunds,
+    offshoreStocks: parsed.offshoreStocks ?? defaults.offshoreStocks,
+    realEstate: parsed.realEstate ?? defaults.realEstate,
+    preciousMetals: parsed.preciousMetals ?? defaults.preciousMetals,
+    businessEquity: parsed.businessEquity ?? defaults.businessEquity,
+    portfolioSettings: parsed.portfolioSettings ?? defaults.portfolioSettings,
+    debtSettings: parsed.debtSettings ?? defaults.debtSettings,
+    transactions: parsed.transactions ?? defaults.transactions,
+    netWorthHistory: parsed.netWorthHistory ?? defaults.netWorthHistory,
+    insurancePolicies: parsed.insurancePolicies ?? defaults.insurancePolicies,
+    coverageTargets: parsed.coverageTargets ?? defaults.coverageTargets,
+    insuranceNotes: parsed.insuranceNotes ?? defaults.insuranceNotes,
+    customBills: parsed.customBills ?? defaults.customBills,
+    billStatus: parsed.billStatus ?? defaults.billStatus,
+    familyMembers: parsed.familyMembers ?? defaults.familyMembers,
+    estateWill: parsed.estateWill ?? defaults.estateWill,
+    estateHeirs: parsed.estateHeirs ?? defaults.estateHeirs,
+    estateBusinessSuccession: parsed.estateBusinessSuccession ?? defaults.estateBusinessSuccession,
+    estateBeneficiaryReview: parsed.estateBeneficiaryReview ?? defaults.estateBeneficiaryReview,
+    estateNextReviewDate: parsed.estateNextReviewDate ?? defaults.estateNextReviewDate,
+    estateChecklist: parsed.estateChecklist ?? defaults.estateChecklist,
+    netWorthSnapshots: parsed.netWorthSnapshots ?? defaults.netWorthSnapshots,
+    fxRemittances: parsed.fxRemittances ?? defaults.fxRemittances,
+    offshoreBrokerCash: parsed.offshoreBrokerCash ?? defaults.offshoreBrokerCash,
+    insuranceNeedsYearsOverride: parsed.insuranceNeedsYearsOverride ?? defaults.insuranceNeedsYearsOverride,
+    cashflowPlan: parsed.cashflowPlan ?? defaults.cashflowPlan,
+    cashflowSettings: parsed.cashflowSettings ?? defaults.cashflowSettings,
+  };
+}
+
+// Returns saved data from this browser, or null if there is none.
+export function readLocalData() {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      // merge with defaults so any newly-added fields (e.g. insurancePolicies)
-      // don't crash the app when reading data saved by an older version
-      return {
-        assets: parsed.assets ?? defaults.assets,
-        liabilities: parsed.liabilities ?? defaults.liabilities,
-        cashAccounts: parsed.cashAccounts ?? defaults.cashAccounts,
-        domesticFunds: parsed.domesticFunds ?? defaults.domesticFunds,
-        offshoreStocks: parsed.offshoreStocks ?? defaults.offshoreStocks,
-        realEstate: parsed.realEstate ?? defaults.realEstate,
-        preciousMetals: parsed.preciousMetals ?? defaults.preciousMetals,
-        businessEquity: parsed.businessEquity ?? defaults.businessEquity,
-        portfolioSettings: parsed.portfolioSettings ?? defaults.portfolioSettings,
-        debtSettings: parsed.debtSettings ?? defaults.debtSettings,
-        transactions: parsed.transactions ?? defaults.transactions,
-        netWorthHistory: parsed.netWorthHistory ?? defaults.netWorthHistory,
-        insurancePolicies: parsed.insurancePolicies ?? defaults.insurancePolicies,
-        coverageTargets: parsed.coverageTargets ?? defaults.coverageTargets,
-        insuranceNotes: parsed.insuranceNotes ?? defaults.insuranceNotes,
-        customBills: parsed.customBills ?? defaults.customBills,
-        billStatus: parsed.billStatus ?? defaults.billStatus,
-        familyMembers: parsed.familyMembers ?? defaults.familyMembers,
-        estateWill: parsed.estateWill ?? defaults.estateWill,
-        estateHeirs: parsed.estateHeirs ?? defaults.estateHeirs,
-        estateBusinessSuccession: parsed.estateBusinessSuccession ?? defaults.estateBusinessSuccession,
-        estateBeneficiaryReview: parsed.estateBeneficiaryReview ?? defaults.estateBeneficiaryReview,
-        estateNextReviewDate: parsed.estateNextReviewDate ?? defaults.estateNextReviewDate,
-        estateChecklist: parsed.estateChecklist ?? defaults.estateChecklist,
-        netWorthSnapshots: parsed.netWorthSnapshots ?? defaults.netWorthSnapshots,
-        fxRemittances: parsed.fxRemittances ?? defaults.fxRemittances,
-        offshoreBrokerCash: parsed.offshoreBrokerCash ?? defaults.offshoreBrokerCash,
-        insuranceNeedsYearsOverride: parsed.insuranceNeedsYearsOverride ?? defaults.insuranceNeedsYearsOverride,
-        cashflowPlan: parsed.cashflowPlan ?? defaults.cashflowPlan,
-        cashflowSettings: parsed.cashflowSettings ?? defaults.cashflowSettings,
-      };
-    }
+    if (raw) return normalizeData(JSON.parse(raw));
   } catch (e) {}
-  return defaults;
+  return null;
+}
+
+function loadData() {
+  return readLocalData() ?? seedData();
+}
+
+// Remove this browser's cached copy (used on sign-out so a shared computer keeps nothing).
+export function clearLocalData() {
+  try {
+    localStorage.removeItem(LS_KEY);
+  } catch (e) {}
 }
 
 /* ---------------- small UI atoms ---------------- */
@@ -1033,7 +951,7 @@ class DashboardErrorBoundary extends React.Component {
           <div style={{ maxWidth: 420, textAlign: "center" }}>
             <div style={{ fontFamily: "Fraunces", fontSize: "1.4rem", marginBottom: 8 }}>เกิดข้อผิดพลาดบางอย่าง</div>
             <div style={{ fontSize: "13px", color: "#8A93A0", marginBottom: 16, lineHeight: 1.6 }}>
-              หน้าจอเกิดปัญหาชั่วคราว — <b style={{ color: "#4FA37B" }}>ข้อมูลของคุณยังปลอดภัยอยู่ในเครื่อง ไม่หายไปไหน</b> ลองโหลดหน้านี้ใหม่อีกครั้ง ถ้ายังเกิดปัญหาซ้ำ กรุณาสำรองข้อมูล (ถ้ายังทำได้) แล้วแจ้งผู้ดูแลระบบ
+              หน้าจอเกิดปัญหาชั่วคราว — <b style={{ color: "#4FA37B" }}>ข้อมูลของคุณยังปลอดภัย ไม่หายไปไหน</b> ลองโหลดหน้านี้ใหม่อีกครั้ง ถ้ายังเกิดปัญหาซ้ำ กรุณาสำรองข้อมูล (ถ้ายังทำได้) แล้วแจ้งผู้ดูแลระบบ
             </div>
             <button
               onClick={() => window.location.reload()}
@@ -1050,16 +968,23 @@ class DashboardErrorBoundary extends React.Component {
   }
 }
 
-export default function WealthVitalityDashboardWrapper() {
+export default function WealthVitalityDashboardWrapper({ cloud = null }) {
   return (
     <DashboardErrorBoundary>
-      <WealthVitalityDashboard />
+      <WealthVitalityDashboard cloud={cloud} />
     </DashboardErrorBoundary>
   );
 }
 
-function WealthVitalityDashboard() {
-  const [data, setData] = useState(loadData);
+function WealthVitalityDashboard({ cloud = null }) {
+  // With cloud sync on, start from the cloud copy; otherwise from this browser.
+  const [data, setData] = useState(() => (cloud?.initialData ? normalizeData(cloud.initialData) : loadData()));
+
+  // Data changed on another device (home ↔ clinic) and was pulled down by the sync layer.
+  useEffect(() => {
+    if (!cloud) return;
+    return cloud.subscribe((remote) => setData(normalizeData(remote)));
+  }, [cloud]);
   const [tab, setTab] = useState("overview");
   const [modal, setModal] = useState(null); // {type: 'asset'|'liability'|'holding'|'transaction'}
   const [toast, setToast] = useState(null);
@@ -1118,11 +1043,13 @@ function WealthVitalityDashboard() {
 
   useEffect(() => {
     try {
+      // Local copy stays as an offline cache.
       localStorage.setItem(LS_KEY, JSON.stringify(data));
     } catch (e) {
-      showToast("บันทึกไม่สำเร็จ (พื้นที่เก็บข้อมูลเต็ม?)", true);
+      if (!cloud) showToast("บันทึกไม่สำเร็จ (พื้นที่เก็บข้อมูลเต็ม?)", true);
     }
-  }, [data]);
+    if (cloud) cloud.queueSave(data);
+  }, [data, cloud]);
 
   function showToast(msg, isError = false) {
     setToast({ msg, isError });
@@ -1351,7 +1278,9 @@ function WealthVitalityDashboard() {
 
     data.liabilities.forEach((l) => {
       if (!l.monthlyPayment || l.status === "Closed" || l.status === "Paid") return;
-      MONTH_ORDER.forEach((m) => {
+      const calYear = new Date().getFullYear();
+      MONTH_ORDER.forEach((m, idx) => {
+        if (!debtDueInMonth(l, calYear, idx)) return; // before the loan starts / after it ends
         byMonth[m].push({ key: `debt-${l.id}`, name: l.name, category: "ผ่อนหนี้", amount: Number(l.monthlyPayment), source: "debt" });
       });
     });
@@ -1498,6 +1427,8 @@ function WealthVitalityDashboard() {
     const items = [];
     data.liabilities.forEach((l) => {
       if (!l.monthlyPayment || l.status === "Closed" || l.status === "Paid") return;
+      const [cfY, cfM] = cashflowMonth.split("-").map(Number);
+      if (cfY && cfM && !debtDueInMonth(l, cfY, cfM - 1)) return;
       const billKey = `debt-${l.id}`;
       const paid = cfYearMatchesThisYear ? !!data.billStatus[billStatusKey(billKey, cfMonthAbbrev)] : null;
       items.push({
@@ -1678,7 +1609,10 @@ function WealthVitalityDashboard() {
         return s;
       }, 0);
       const debtTotal = data.liabilities.reduce(
-        (s, l) => (!l.monthlyPayment || l.status === "Closed" || l.status === "Paid" ? s : s + Number(l.monthlyPayment)),
+        (s, l) =>
+          !l.monthlyPayment || l.status === "Closed" || l.status === "Paid" || !debtDueInMonth(l, Number(year), idx)
+            ? s
+            : s + Number(l.monthlyPayment),
         0
       );
       const dcaTotal =
@@ -1704,7 +1638,7 @@ function WealthVitalityDashboard() {
     // are never saved into data.transactions — generate the same virtual items for every month of
     // the year here too, so Annual Summary / Fixed Expenses actually reflects what CASH OUT shows.
     const virtualYearItems = [];
-    MONTH_ORDER.forEach((mAbbrev) => {
+    MONTH_ORDER.forEach((mAbbrev, mIdx) => {
       data.insurancePolicies.forEach((p) => {
         if (!p.premium) return;
         let amount = null;
@@ -1714,6 +1648,7 @@ function WealthVitalityDashboard() {
       });
       data.liabilities.forEach((l) => {
         if (!l.monthlyPayment || l.status === "Closed" || l.status === "Paid") return;
+        if (!debtDueInMonth(l, year, mIdx)) return;
         virtualYearItems.push({ type: "รายจ่าย", flowCategory: "ชำระหนี้", amount: Number(l.monthlyPayment) });
       });
       data.domesticFunds.forEach((f) => {
@@ -2022,7 +1957,7 @@ function WealthVitalityDashboard() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (!window.confirm("นำเข้าไฟล์นี้จะเขียนทับข้อมูลปัจจุบันทั้งหมดในเครื่องนี้ ต้องการดำเนินการต่อหรือไม่?")) return;
+    if (!window.confirm(cloud ? "นำเข้าไฟล์นี้จะเขียนทับข้อมูลปัจจุบันทั้งหมด (รวมถึงบน cloud ที่ทุกเครื่องใช้ร่วมกัน) ต้องการดำเนินการต่อหรือไม่?" : "นำเข้าไฟล์นี้จะเขียนทับข้อมูลปัจจุบันทั้งหมดในเครื่องนี้ ต้องการดำเนินการต่อหรือไม่?")) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
@@ -2031,12 +1966,7 @@ function WealthVitalityDashboard() {
           throw new Error("invalid shape");
         }
         // Merge onto fresh defaults so a backup from an older version (missing newer fields) doesn't crash the app
-        const defaults = seedData();
-        const merged = { ...defaults };
-        Object.keys(defaults).forEach((key) => {
-          if (parsed[key] !== undefined) merged[key] = parsed[key];
-        });
-        setData(merged);
+        setData(normalizeData(parsed));
         showToast("กู้คืนข้อมูลสำเร็จแล้ว");
       } catch (err) {
         showToast("ไฟล์นี้ไม่ใช่ไฟล์สำรองข้อมูลที่ถูกต้อง (JSON ไม่ถูกรูปแบบ)", true);
