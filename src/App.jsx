@@ -4324,7 +4324,7 @@ function MonthlyBillsTab({ monthlyBillsByMonth, monthlyBillsSummary, billStatus,
 
 const NOTE_ICONS = { claim: AlertTriangle, home: Shield, clinic: ShieldCheck, coop: Wallet, estimate: Info };
 
-function EditableText({ value, onSave, style, listId }) {
+function EditableText({ value, onSave, style, listId, allowClear = false, placeholder, startEmpty = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
@@ -4338,9 +4338,12 @@ function EditableText({ value, onSave, style, listId }) {
         list={listId}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
+        placeholder={placeholder}
         onBlur={() => {
           setEditing(false);
-          if (draft.trim() && draft !== value) onSave(draft.trim());
+          const t = String(draft ?? "").trim();
+          if (allowClear && (t === "" || t === "-") && value !== "-" && value !== "" && !startEmpty) onSave("");
+          else if (t && t !== "-" && draft !== value) onSave(t);
           else setDraft(value);
         }}
         onKeyDown={(e) => {
@@ -4364,7 +4367,15 @@ function EditableText({ value, onSave, style, listId }) {
     );
   }
   return (
-    <span onClick={() => setEditing(true)} className="cursor-pointer" style={{ borderBottom: "1px dashed #2A394988", ...style }} title="แตะเพื่อแก้ไข">
+    <span
+      onClick={() => {
+        if (startEmpty || (allowClear && value === "-")) setDraft("");
+        setEditing(true);
+      }}
+      className="cursor-pointer"
+      style={{ borderBottom: "1px dashed #2A394988", ...style }}
+      title="แตะเพื่อแก้ไข"
+    >
       {value}
     </span>
   );
@@ -5671,13 +5682,26 @@ function DebtTab({
                     <div>
                       <div style={{ color: "#8A93A0" }}>วันที่ครบกำหนด</div>
                       {hasMaturityDate ? (
-                        <EditableText value={l.maturityDate} onSave={(v) => updateItem("liabilities", l.id, { maturityDate: v })} style={{ fontFamily: "JetBrains Mono", fontSize: "12px" }} />
-                      ) : standalone.feasible && standalone.date ? (
-                        <span style={{ fontFamily: "JetBrains Mono", fontSize: "12px", color: "#C9A227" }} title="ประมาณจากยอดผ่อน/เดือน (ยังไม่ได้ระบุวันที่จริง)">
-                          ~{formatDebtFreeDate(standalone.months, { yearSystem })}
-                        </span>
+                        <EditableText allowClear placeholder="YYYY-MM-DD" value={l.maturityDate} onSave={(v) => updateItem("liabilities", l.id, { maturityDate: v })} style={{ fontFamily: "JetBrains Mono", fontSize: "12px" }} />
                       ) : (
-                        <span style={{ fontSize: "12px", color: "#8A93A0" }}>-</span>
+                        <div>
+                          {standalone.feasible && standalone.date && (
+                            <div style={{ fontFamily: "JetBrains Mono", fontSize: "12px", color: "#C9A227" }} title="ประมาณจากยอดผ่อน/เดือน (ยังไม่ได้ระบุวันที่จริง)">
+                              ~{formatDebtFreeDate(standalone.months, { yearSystem })}
+                            </div>
+                          )}
+                          <EditableText
+                            allowClear
+                            placeholder="YYYY-MM-DD"
+                            startEmpty
+                            value="+ ระบุวันตามสัญญา"
+                            onSave={(v) => {
+                              if (dateToMonthIndex(v) === null) return alert("รูปแบบวันที่ไม่ถูกต้อง — ใช้ YYYY-MM-DD เช่น 2056-10-01 หรือ 2599-10-01");
+                              updateItem("liabilities", l.id, { maturityDate: v });
+                            }}
+                            style={{ fontSize: "11px", color: "#8A93A0" }}
+                          />
+                        </div>
                       )}
                     </div>
                     <div>
@@ -5686,12 +5710,6 @@ function DebtTab({
                         {standalone.feasible && standalone.months ? `${standalone.months} งวด` : "-"}
                       </span>
                     </div>
-                    {payoffLate && (
-                      <div className="col-span-2 sm:col-span-4 px-3 py-2 rounded-lg" style={{ background: "#C9A22715", border: "1px solid #C9A22755", color: "#C9A227", fontSize: "11.5px", lineHeight: 1.55 }}>
-                        ⚠ ยอดผ่อนปัจจุบันจะปิดหนี้ได้
-                        {estEndIdx !== null ? ` ประมาณ ${formatDebtFreeDate(standalone.months, { yearSystem })}` : "ไม่หมด (ยอดผ่อนไม่พอจ่ายดอกเบี้ย)"} แต่สัญญาสิ้นสุด {contractEndLabel} — ตรวจดอกเบี้ย ยอดคงเหลือ หรือยอดผ่อนกับ statement ล่าสุด
-                      </div>
-                    )}
                     <div>
                       <div style={{ color: "#8A93A0" }}>หลักประกัน</div>
                       <span style={{ fontFamily: "JetBrains Mono", fontSize: "12px" }}>
@@ -5713,6 +5731,12 @@ function DebtTab({
                     </div>
                   </div>
 
+                    {payoffLate && (
+                      <div className="mt-3 px-3 py-2 rounded-lg" style={{ background: "#C9A22715", border: "1px solid #C9A22755", color: "#C9A227", fontSize: "11.5px", lineHeight: 1.55 }}>
+                        ⚠ ยอดผ่อนปัจจุบันจะปิดหนี้ได้
+                        {estEndIdx !== null ? ` ประมาณ ${formatDebtFreeDate(standalone.months, { yearSystem })}` : "ไม่หมด (ยอดผ่อนไม่พอจ่ายดอกเบี้ย)"} แต่สัญญาสิ้นสุด {contractEndLabel} — ตรวจดอกเบี้ย ยอดคงเหลือ หรือยอดผ่อนกับ statement ล่าสุด
+                      </div>
+                    )}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3" style={{ fontSize: "12px" }}>
                     <div>
                       <div style={{ color: "#8A93A0" }}>ผู้กู้</div>
@@ -5734,7 +5758,7 @@ function DebtTab({
                     </div>
                     <div>
                       <div style={{ color: "#8A93A0" }}>สิ้นสุด (ระบุปี)</div>
-                      <EditableText value={l.endYear || "-"} onSave={(v) => updateItem("liabilities", l.id, { endYear: v })} style={{ fontFamily: "JetBrains Mono", fontSize: "12px" }} />
+                      <EditableText allowClear placeholder="เช่น 2056 หรือ 2599" value={l.endYear || "-"} onSave={(v) => updateItem("liabilities", l.id, { endYear: v })} style={{ fontFamily: "JetBrains Mono", fontSize: "12px" }} />
                     </div>
                   </div>
                   {(l.notes || true) && (
