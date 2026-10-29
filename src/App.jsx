@@ -1137,7 +1137,6 @@ function WealthVitalityDashboard({ cloud = null }) {
   const investmentCostBasis = cashTotal + domesticFundsCost + offshoreCostTHB + realEstateCost + preciousMetalsCost + businessEquityCost;
   const investmentTotalPL = investmentNetWorth - investmentCostBasis;
   const investmentTotalPLPct = investmentCostBasis ? (investmentTotalPL / investmentCostBasis) * 100 : 0;
-  const goalProgress = data.portfolioSettings?.netWorthGoal ? Math.min((investmentNetWorth / data.portfolioSettings.netWorthGoal) * 100, 100) : 0;
 
   // Insurance policies with real cash value (savings/annuity/unit-link types) — term life & pure health/CI riders have none
   const insuranceCashValueTotal = useMemo(
@@ -1153,15 +1152,15 @@ function WealthVitalityDashboard({ cloud = null }) {
       { name: "อสังหาริมทรัพย์", value: realEstateValue },
       { name: "โลหะมีค่า", value: preciousMetalsValue },
       { name: "หุ้นธุรกิจส่วนตัว", value: businessEquityValue },
-      { name: "มูลค่าเวนคืนกรมธรรม์", value: insuranceCashValueTotal },
     ].filter((a) => a.value > 0),
-    [cashTotal, domesticFundsValue, offshoreValueTHB, realEstateValue, preciousMetalsValue, businessEquityValue, insuranceCashValueTotal]
+    [cashTotal, domesticFundsValue, offshoreValueTHB, realEstateValue, preciousMetalsValue, businessEquityValue]
   );
 
   // True total assets = investment portfolio (Investments Corner) + insurance cash value + any other manually-tracked assets
   const totalAssets = otherAssetsTotal + investmentNetWorth + insuranceCashValueTotal;
   const overviewAllocation = useMemo(() => {
     const list = [...investmentAllocation];
+    if (insuranceCashValueTotal > 0) list.push({ name: "มูลค่าเวนคืนกรมธรรม์", value: insuranceCashValueTotal });
     const otherByCategory = {};
     data.assets.forEach((a) => {
       const key = a.category || "อื่นๆ";
@@ -1171,7 +1170,7 @@ function WealthVitalityDashboard({ cloud = null }) {
       if (value > 0) list.push({ name, value });
     });
     return list;
-  }, [investmentAllocation, data.assets]);
+  }, [investmentAllocation, insuranceCashValueTotal, data.assets]);
 
   // target/drift only meaningful within domestic+offshore combined (matches source sheet)
   const domesticFundsWithDrift = useMemo(
@@ -1196,6 +1195,8 @@ function WealthVitalityDashboard({ cloud = null }) {
   );
 
   const netWorth = totalAssets - totalLiabilities;
+  // Goal is a NET worth goal, so measure it against net worth (after debts), not gross investments.
+  const goalProgress = data.portfolioSettings?.netWorthGoal ? Math.max(Math.min((netWorth / data.portfolioSettings.netWorthGoal) * 100, 100), 0) : 0;
 
   const thisMonthTx = useMemo(() => {
     const now = new Date();
@@ -1259,6 +1260,28 @@ function WealthVitalityDashboard({ cloud = null }) {
     }
     return hist;
   }, [data.netWorthHistory, netWorth]);
+
+  // Save one net-worth point per calendar month (the first time the app is opened that month),
+  // so the trend chart builds itself. Only appends — never rewrites a month already recorded —
+  // so two devices on different live FX rates don't keep overwriting each other.
+  useEffect(() => {
+    const hasAnything = totalAssets > 0 || totalLiabilities > 0;
+    if (!hasAnything) return;
+    const monthKey = todayStr().slice(0, 7);
+    const hist = data.netWorthHistory || [];
+    if (hist.some((h) => String(h.date || "").slice(0, 7) === monthKey)) return;
+    setData((d) => {
+      const h = d.netWorthHistory || [];
+      if (h.some((x) => String(x.date || "").slice(0, 7) === monthKey)) return d;
+      return { ...d, netWorthHistory: [...h, { date: todayStr(), value: Math.round(netWorth) }] };
+    });
+  }, [data.netWorthHistory, netWorth, totalAssets, totalLiabilities]);
+
+  function clearNetWorthHistory() {
+    if (!window.confirm("ลบประวัติ Net Worth ทั้งหมด แล้วเริ่มบันทึกใหม่จากเดือนนี้? (ข้อมูลอื่นไม่ถูกลบ)")) return;
+    setData((d) => ({ ...d, netWorthHistory: [{ date: todayStr(), value: Math.round(netWorth) }] }));
+    showToast("ล้างประวัติ Net Worth แล้ว");
+  }
 
   /* ---------- combined monthly bills (insurance + debt + custom) ---------- */
   const monthlyBillsByMonth = useMemo(() => {
@@ -1999,7 +2022,7 @@ function WealthVitalityDashboard({ cloud = null }) {
             </div>
             <div className="min-w-0">
               <div style={{ fontFamily: "Fraunces", fontSize: "1.1rem", fontWeight: 500, lineHeight: 1.2 }}>Wealth Vitality</div>
-              <div className="hidden sm:block truncate" style={{ fontSize: "11px", color: "#8A93A0" }}>เก็บข้อมูลในเครื่องนี้เท่านั้น · ไม่มีการส่งข้อมูลออกไปที่ใด</div>
+              <div className="hidden sm:block truncate" style={{ fontSize: "11px", color: "#8A93A0" }}>{cloud ? "ซิงก์ผ่าน cloud · ทุกเครื่องเห็นข้อมูลชุดเดียวกัน" : "เก็บในเครื่องนี้เท่านั้น (ยังไม่เปิด cloud sync)"}</div>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -2044,6 +2067,7 @@ function WealthVitalityDashboard({ cloud = null }) {
             totalMonthlyDebtPayment={totalMonthlyDebtPayment}
             weightedInterestRate={weightedInterestRate}
             nwTrend={nwTrend}
+            onClearNetWorthHistory={clearNetWorthHistory}
             assetAllocation={overviewAllocation}
             data={data}
             setModal={setModal}
@@ -2083,6 +2107,7 @@ function WealthVitalityDashboard({ cloud = null }) {
             investmentTotalPL={investmentTotalPL}
             investmentTotalPLPct={investmentTotalPLPct}
             goalProgress={goalProgress}
+            netWorthForGoal={netWorth}
             investmentAllocation={investmentAllocation}
             domesticFundsWithDrift={domesticFundsWithDrift}
             offshoreStocksWithDrift={offshoreStocksWithDrift}
@@ -2291,10 +2316,20 @@ function WealthVitalityDashboard({ cloud = null }) {
 
 /* ================= OVERVIEW TAB ================= */
 
-function OverviewTab({ netWorth, totalAssets, totalLiabilities, totalMonthlyDebtPayment, weightedInterestRate, nwTrend, assetAllocation, data, setModal, removeItem, PIE_COLORS, setTab, debtToAssetRatio, debtToNetWorthRatio, debtServiceRatio, annualSummary, investmentNetWorth, emergencyFundMonths, avgMonthlyFixedExpense, updateItem }) {
+function OverviewTab({ onClearNetWorthHistory, netWorth, totalAssets, totalLiabilities, totalMonthlyDebtPayment, weightedInterestRate, nwTrend, assetAllocation, data, setModal, removeItem, PIE_COLORS, setTab, debtToAssetRatio, debtToNetWorthRatio, debtServiceRatio, annualSummary, investmentNetWorth, emergencyFundMonths, avgMonthlyFixedExpense, updateItem }) {
   const trendValues = nwTrend.map((h) => h.value);
+  // Compare against the latest point that is at least ~6 months old (or the oldest point if history is shorter).
+  const sixMonthsAgo = (() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 6);
+    return d.toISOString().slice(0, 10);
+  })();
+  const basePoint = [...nwTrend].reverse().find((h) => String(h.date) <= sixMonthsAgo) || nwTrend[0];
   const growth =
-    trendValues.length > 1 ? ((trendValues[trendValues.length - 1] - trendValues[0]) / Math.abs(trendValues[0])) * 100 : 0;
+    nwTrend.length > 1 && basePoint && basePoint.value
+      ? ((trendValues[trendValues.length - 1] - basePoint.value) / Math.abs(basePoint.value)) * 100
+      : 0;
+  const growthLabel = basePoint && String(basePoint.date) <= sixMonthsAgo ? "ช่วง 6 เดือนที่ผ่านมา" : basePoint ? `ตั้งแต่ ${monthLabel(basePoint.date)}` : "";
 
   return (
     <div className="flex flex-col gap-6">
@@ -2307,7 +2342,7 @@ function OverviewTab({ netWorth, totalAssets, totalLiabilities, totalMonthlyDebt
           </div>
           <div className="flex items-center gap-2 mt-2 flex-wrap" style={{ fontFamily: "JetBrains Mono", fontSize: "13px", color: growth >= 0 ? "#4FA37B" : "#C1554A" }}>
             {growth >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-            {growth >= 0 ? "+" : ""}{growth.toFixed(1)}% <span style={{ color: "#8A93A0", fontFamily: "Inter" }}>ช่วง 6 เดือนที่ผ่านมา</span>
+            {growth >= 0 ? "+" : ""}{growth.toFixed(1)}% <span style={{ color: "#8A93A0", fontFamily: "Inter" }}>{growthLabel}</span>
           </div>
           <div style={{ fontSize: "10.5px", color: "#8A93A0", marginTop: 6 }}>
             = สินทรัพย์รวม {fmtCompact(totalAssets)} − หนี้สินรวม {fmtCompact(totalLiabilities)}
@@ -2328,7 +2363,17 @@ function OverviewTab({ netWorth, totalAssets, totalLiabilities, totalMonthlyDebt
       />
 
       <Card className="p-5">
-        <div style={{ fontFamily: "Fraunces", fontSize: "1.05rem", marginBottom: 14 }}>แนวโน้ม Net Worth</div>
+        <div className="flex items-center justify-between gap-3 mb-3.5 flex-wrap">
+          <div style={{ fontFamily: "Fraunces", fontSize: "1.05rem" }}>แนวโน้ม Net Worth</div>
+          <div className="flex items-center gap-3" style={{ fontSize: "11px", color: "#8A93A0" }}>
+            <span>บันทึกอัตโนมัติเดือนละ 1 จุด</span>
+            {onClearNetWorthHistory && (
+              <button onClick={onClearNetWorthHistory} style={{ color: "#C1554A", background: "none", border: "none", cursor: "pointer", fontSize: "11px", textDecoration: "underline" }}>
+                ล้างประวัติ
+              </button>
+            )}
+          </div>
+        </div>
         <ResponsiveContainer width="100%" height={210}>
           <AreaChart data={nwTrend}>
             <defs>
@@ -2672,7 +2717,7 @@ function PortfolioTab(props) {
     data, usdThbRate, cashTotal, domesticFundsValue, domesticFundsCost, offshoreValueUSD, offshoreStockHoldingsUSD, offshoreCostUSD,
     offshoreValueTHB, offshoreCostTHB, realEstateValue, realEstateCost, preciousMetalsValue, preciousMetalsCost,
     businessEquityValue, businessEquityCost, investmentNetWorth, investmentCostBasis, investmentTotalPL,
-    investmentTotalPLPct, goalProgress, investmentAllocation, domesticFundsWithDrift, offshoreStocksWithDrift,
+    investmentTotalPLPct, goalProgress, netWorthForGoal, investmentAllocation, domesticFundsWithDrift, offshoreStocksWithDrift,
     setModal, removeItem, updateItem, updateSettings, PIE_COLORS,
     liveRates, isLiveRate, fetchLiveRates, getLiveRateToThb, fetchStockPrice, removeOffshoreSale, setField,
   } = props;
@@ -2722,6 +2767,7 @@ function PortfolioTab(props) {
           investmentTotalPL={investmentTotalPL}
           investmentTotalPLPct={investmentTotalPLPct}
           goalProgress={goalProgress}
+          netWorthForGoal={netWorthForGoal}
           netWorthGoal={data.portfolioSettings?.netWorthGoal || 0}
           investmentAllocation={investmentAllocation}
           usdThbRate={usdThbRate}
@@ -2810,7 +2856,7 @@ function PortfolioTab(props) {
   );
 }
 
-function PortfolioOverview({ investmentNetWorth, investmentCostBasis, investmentTotalPL, investmentTotalPLPct, goalProgress, netWorthGoal, investmentAllocation, usdThbRate, PIE_COLORS, updateSettings, liveRates, isLiveRate, fetchLiveRates, stockApiKey }) {
+function PortfolioOverview({ netWorthForGoal, investmentNetWorth, investmentCostBasis, investmentTotalPL, investmentTotalPLPct, goalProgress, netWorthGoal, investmentAllocation, usdThbRate, PIE_COLORS, updateSettings, liveRates, isLiveRate, fetchLiveRates, stockApiKey }) {
   return (
     <div className="flex flex-col gap-6">
       <Card className="p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -2882,7 +2928,7 @@ function PortfolioOverview({ investmentNetWorth, investmentCostBasis, investment
         <div className="flex items-center justify-between mb-2">
           <div style={{ fontFamily: "Fraunces", fontSize: "1.05rem" }}>เป้าหมาย Net Worth</div>
           <div style={{ fontFamily: "JetBrains Mono", fontSize: "12.5px", color: "#8A93A0" }}>
-            {fmtTHB(investmentNetWorth)} / <EditableNumber value={netWorthGoal} onSave={(v) => updateSettings("portfolioSettings", { netWorthGoal: v })} /> บาท
+            {fmtTHB(netWorthForGoal)} / <EditableNumber value={netWorthGoal} onSave={(v) => updateSettings("portfolioSettings", { netWorthGoal: v })} /> บาท
             <span style={{ color: goalProgress >= 100 ? "#4FA37B" : "#C9A227", marginLeft: 8 }}>{goalProgress.toFixed(1)}%</span>
           </div>
         </div>
@@ -5508,6 +5554,21 @@ function DebtTab({
               const rankIdx = activeDebtSim.order.indexOf(l.id);
               const standalone = estimateStandalonepayoff(l);
               const hasMaturityDate = !!l.maturityDate;
+              // Contract end (maturity date, else end year) vs. when the current payment would actually finish.
+              let contractEndIdx = dateToMonthIndex(l.maturityDate);
+              if (contractEndIdx === null && l.endYear) {
+                let ey = parseInt(l.endYear, 10);
+                if (ey > 2400) ey -= 543;
+                if (ey) contractEndIdx = ey * 12 + 11;
+              }
+              const nowIdx = new Date().getFullYear() * 12 + new Date().getMonth();
+              const estEndIdx = standalone.feasible && standalone.months ? nowIdx + standalone.months : null;
+              const payoffLate =
+                !isPaidOff && contractEndIdx !== null && (estEndIdx === null ? standalone.feasible === false : estEndIdx - contractEndIdx > 12);
+              const contractEndLabel =
+                contractEndIdx !== null
+                  ? `${DEBT_FREE_MONTH_NAMES[contractEndIdx % 12]} ${Math.floor(contractEndIdx / 12) + (yearSystem === "ad" ? 0 : 543)}`
+                  : "";
               return (
                 <div key={l.id} className="p-4 rounded-xl" style={{ background: "#101820", border: `1px solid ${isPaidOff ? "#4FA37B44" : "#1E2A38"}`, opacity: isPaidOff ? 0.6 : 1 }}>
                   <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
@@ -5625,6 +5686,12 @@ function DebtTab({
                         {standalone.feasible && standalone.months ? `${standalone.months} งวด` : "-"}
                       </span>
                     </div>
+                    {payoffLate && (
+                      <div className="col-span-2 sm:col-span-4 px-3 py-2 rounded-lg" style={{ background: "#C9A22715", border: "1px solid #C9A22755", color: "#C9A227", fontSize: "11.5px", lineHeight: 1.55 }}>
+                        ⚠ ยอดผ่อนปัจจุบันจะปิดหนี้ได้
+                        {estEndIdx !== null ? ` ประมาณ ${formatDebtFreeDate(standalone.months, { yearSystem })}` : "ไม่หมด (ยอดผ่อนไม่พอจ่ายดอกเบี้ย)"} แต่สัญญาสิ้นสุด {contractEndLabel} — ตรวจดอกเบี้ย ยอดคงเหลือ หรือยอดผ่อนกับ statement ล่าสุด
+                      </div>
+                    )}
                     <div>
                       <div style={{ color: "#8A93A0" }}>หลักประกัน</div>
                       <span style={{ fontFamily: "JetBrains Mono", fontSize: "12px" }}>
